@@ -1,18 +1,18 @@
 #include "optical_flow.hpp"
-#include "sad_block_matcher.hpp"
+#include "sad_block_match.hpp"
 
 OpticalFlow::OpticalFlow(
     int img_height, int img_width, int win_size, int block_matcher_type)
     : img_height_(img_height), img_width_(img_width), win_size_(win_size) {
     switch (block_matcher_type) {
-        case SSD_BLOCK_MATCH:
-            blockMatcher_ =
-                new SADBlockMatcher(img_height, img_width, win_size_);
-            break;
-        default:
-            blockMatcher_ =
-                new SADBlockMatcher(img_height, img_width, win_size_);
-            break;
+        // case SSD_BLOCK_MATCH:
+        //     blockMatcher_ =
+        //         new SADBlockMatcher(img_height, img_width, win_size_);
+        //     break;
+        // default:
+        //     blockMatcher_ =
+        //         new SADBlockMatcher(img_height, img_width, win_size_);
+        //     break;
     }
 }
 

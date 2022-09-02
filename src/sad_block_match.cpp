@@ -1,5 +1,4 @@
-#include "block_match.hpp"
-#include "sad_block_matcher.hpp"
+#include "sad_block_match.hpp"
 
 
 SADBlockMatcher::SADBlockMatcher(int img_height, int img_width, int win_size):BlockMatcher(win_size){}
