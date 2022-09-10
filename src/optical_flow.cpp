@@ -28,10 +28,14 @@ OpticalFlow::OpticalFlow(
                 new SADBlockMatcher(img_height, img_width, win_size_);
             break;
     }
+
+    distance_low_threshold_ = win_size_ * win_size_ * 2;
+    distance_up_threshold_ = win_size_ * win_size_ * 20;
+
     shift_arr_size_ = ((img_width_ - 2 * win_size_) / step_size_ + 1)
                       * ((img_height_ - 2 * win_size_) / step_size_ + 1);
-    shift_x_ = (int8_t *)malloc(shift_arr_size_ * sizeof(int8_t));
-    shift_y_ = (int8_t *)malloc(shift_arr_size_ * sizeof(int8_t));
+    shift_x_ = (float *)malloc(shift_arr_size_ * sizeof(float));
+    shift_y_ = (float *)malloc(shift_arr_size_ * sizeof(float));
     shift_row_ = (uint16_t *)malloc(shift_arr_size_ * sizeof(uint16_t));
     shift_col_ = (uint16_t *)malloc(shift_arr_size_ * sizeof(uint16_t));
 }
@@ -43,6 +47,7 @@ OpticalFlow::~OpticalFlow() {
     free(shift_col_);
 }
 
+// Return optical quality from 0 to 100.
 int OpticalFlow::calFlow(
     uint8_t *&pre_img,
     uint8_t *&cur_img,
@@ -84,22 +89,31 @@ int OpticalFlow::calFlow(
                 getSubPixelShift(
                     pre_img, cur_img, row, col, cur_row, cur_col, min_dir);
 
-                // 0 1 2
-                // 3 p 4
-                // 5 6 7
-                if (min_dir == 2 || min_dir == 4 || min_dir == 7)
-                    hist_x[win_size_ + 2 * (cur_col - col) + 1]++;
-                if (min_dir == 0 || min_dir == 3 || min_dir == 5)
-                    hist_x[win_size_ + 2 * (cur_col - col) - 1]++;
-                if (min_dir == 0 || min_dir == 1 || min_dir == 2)
-                    hist_y[win_size_ + 2 * (cur_row - row) + 1]++;
-                if (min_dir == 5 || min_dir == 6 || min_dir == 7)
-                    hist_y[win_size_ + 2 * (cur_row - row) - 1]++;
-
                 *(shift_x_ + count_) = cur_row - row;
                 *(shift_y_ + count_) = cur_col - col;
                 *(shift_row_ + count_) = row;
                 *(shift_col_ + count_) = col;
+                // 0 1 2
+                // 3 p 4
+                // 5 6 7
+                if (min_dir == 2 || min_dir == 4 || min_dir == 7) {
+                    hist_x[win_size_ + 2 * (cur_col - col) + 1]++;
+                    *(shift_x_ + count_) += 0.5f;
+                } else if (min_dir == 0 || min_dir == 3 || min_dir == 5) {
+                    hist_x[win_size_ + 2 * (cur_col - col) - 1]++;
+                    *(shift_x_ + count_) -= 0.5f;
+                } else {
+                    hist_x[win_size_ + 2 * (cur_col - col)]++;
+                }
+                if (min_dir == 0 || min_dir == 1 || min_dir == 2) {
+                    hist_y[win_size_ + 2 * (cur_row - row) + 1]++;
+                    *(shift_y_ + count_) += 0.5f;
+                } else if (min_dir == 5 || min_dir == 6 || min_dir == 7) {
+                    hist_y[win_size_ + 2 * (cur_row - row) - 1]++;
+                    *(shift_y_ + count_) -= 0.5f;
+                } else {
+                    hist_y[win_size_ + 2 * (cur_row - row)]++;
+                }
                 count_++;
             }
         }
@@ -107,8 +121,11 @@ int OpticalFlow::calFlow(
 
     // check the histogram result. most shift result should concentrate in the
     // same section.
-    if (count_ >= (img_width_ - win_size_) / step_size_ / 2
-                      * (img_height_ - win_size_) / step_size_ / 2) {
+    // If the values located in the near sections of histgram, then only
+    // calculate average value of shifts close to each other. Otherwise, count
+    // all values and calcuate the average.
+    if (count_ >= (img_width_ - win_size_) / step_size_
+                      * (img_height_ - win_size_) / step_size_ / 4) {
         uint8_t count_x = 0, count_y = 0, sum_x = 0, sum_y = 0;
         uint8_t continuous_x[hist_size], continuous_y[hist_size];
         int8_t start_x = -1, end_x = -1, start_y = -1, end_y = -1;
@@ -116,19 +133,31 @@ int OpticalFlow::calFlow(
         float average_x = 0, average_y;
         mean_shift_x = 0.f, mean_shift_y = 0.f;
         for (int i = 0; i < hist_size; i++) {
+            continuous_x[i] = 0;
+            continuous_y[i] = 0;
             average_x += (float)hist_x[i];
             average_y += (float)hist_y[i];
         }
-        average_x /= win_size_;
-        average_y /= win_size_;
+        average_x /= hist_size;
+        average_y /= hist_size;
         for (int i = 0; i < hist_size; i++) {
             if (hist_x[i] > average_x) { count_x++; }
             if (hist_y[i] > average_y) { count_y++; }
         }
         if (count_x > hist_range_ || count_y > hist_range_) {
-            cout << "Image shift distribution scatters over several sections.";
-            return -1;
+            cout
+                << "Image shift distribution scatters over several sections, calculate the average with all values."
+                << endl;
+            for (int i = 0; i < count_; i++) {
+                mean_shift_x += shift_x_[i];
+                mean_shift_y += shift_y_[i];
+            }
+            mean_shift_x /= count_;
+            mean_shift_y /= count_;
+            quality = round(count_ * 100 / shift_arr_size_);
+            return quality;
         }
+
         for (int i = 1; i < hist_size; i++) {
             if (hist_x[i] > average_x && hist_x[i - 1] > average_x) {
                 continuous_x[i] = 1;
@@ -140,35 +169,35 @@ int OpticalFlow::calFlow(
             }
         }
         for (int i = 0; i < hist_size; i++) {
-            if (start_x != -1 && hist_x[i] == i) { start_x = i; }
-            if (start_y != -1 && hist_y[i] == i) { start_y = i; }
+            if (start_x == -1 && hist_x[i] > average_x * 1.5) { start_x = i; }
+            if (start_y == -1 && hist_y[i] > average_y * 1.5) { start_y = i; }
         }
         for (int i = hist_size - 1; i >= 0; i--) {
-            if (end_x != -1 && hist_x[i] == i) { end_x = i; }
-            if (end_y != -1 && hist_y[i] == i) { end_y = i; }
+            if (end_x == -1 && hist_x[i] > average_x * 1.5) { end_x = i; }
+            if (end_y == -1 && hist_y[i] > average_y * 1.5) { end_y = i; }
         }
         if (end_x - start_x > hist_range_ || end_y - start_y > hist_range_) {
-            cout << "Image shift distribution is not continuous.";
+            cout << "Image shift distribution is not continuous." << endl;
             return -1;
         }
 
         for (int i = start_x; i <= end_x; i++) {
-            mean_shift_x += hist_x[i] * i;
+            mean_shift_x += hist_x[i] * (i - win_size_);
             sum_x += hist_x[i];
         }
         for (int i = start_y; i <= end_y; i++) {
-            mean_shift_y += hist_y[i] * i;
+            mean_shift_y += hist_y[i] * (i - win_size_);
             sum_y += hist_y[i];
         }
         mean_shift_x = round(mean_shift_x / 2 / sum_x);
         mean_shift_y = round(mean_shift_y / 2 / sum_y);
 
-        quality = sum_x / average_x * win_size_ * 255
-                  + sum_x / average_y * win_size_ * 255;
+        quality = sum_x / (average_x * hist_size) * 100
+                  + sum_x / (average_y * hist_size) * 100;
         quality /= 2;
         return round(quality);
     }
-    return 0;
+    return -1;
 }
 
 void OpticalFlow::getSubPixelShift(

@@ -10,20 +10,29 @@
 
 TEST(test_optical_flow, test_optical_flow) {
     cv::Mat img1_mat = cv::imread(
-        "/home/yeren/OneDrive/C C++ Projects/optical_flow/test/1.png",
+        "/home/yeren/OneDrive/C C++ Projects/optical_flow/test/3.jpg",
+        // "/home/yeren/OneDrive/C C++ Projects/optical_flow/test/1.png",
         // "/home/yeren/dataset/sequences/05/image_0/000000.png",
 
         cv::IMREAD_GRAYSCALE);
+    cv::resize(img1_mat, img1_mat, cv::Size(), 0.25, 0.25, cv::INTER_NEAREST);
     uint8_t *img1 = img1_mat.data;
     cv::Mat img2_mat = cv::imread(
-        "/home/yeren/OneDrive/C C++ Projects/optical_flow/test/2.png",
+        "/home/yeren/OneDrive/C C++ Projects/optical_flow/test/4.jpg",
+        // "/home/yeren/OneDrive/C C++ Projects/optical_flow/test/2.png",
         // "/home/yeren/dataset/sequences/05/image_0/000001.png",
         cv::IMREAD_GRAYSCALE);
+    cv::resize(img2_mat, img2_mat, cv::Size(), 0.25, 0.25, cv::INTER_NEAREST);
+
     uint8_t *img2 = img2_mat.data;
     OpticalFlow opt_flow(img1_mat.rows, img1_mat.cols, 17, 20, SSD_BLOCK_MATCH);
 
     float mean_shift_x, mean_shift_y;
-    opt_flow.calFlow(img1, img2, mean_shift_x, mean_shift_y);
+    int quality;
+    quality = opt_flow.calFlow(img1, img2, mean_shift_x, mean_shift_y);
+    std::cout << "Quality of optical flow is " << quality << std::endl
+              << "mean shift off x and y are " << mean_shift_x << " and "
+              << mean_shift_y << std::endl;
 
     for (int i = 0; i < opt_flow.count_; i++) {
         cv::line(
